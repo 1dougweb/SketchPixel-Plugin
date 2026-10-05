@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>SketchPixel 2.5D</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header>
+    <div class="brand">
+      <span class="brand-icon">👾</span>
+      <span class="brand-title">SketchPixel 2.5D</span>
+    </div>
+
+    <!-- Modos de Exibição -->
+    <div class="view-mode-tabs">
+      <button id="tabModeDiffuse" class="mode-btn active">
+        <span>🖼️</span> Pixel Art
+      </button>
+      <button id="tabModeNormal" class="mode-btn">
+        <span>🧭</span> Normal Map
+      </button>
+      <button id="tabModeLight" class="mode-btn">
+        <span>💡</span> Teste de Luz Dinâmica
+      </button>
+    </div>
+
+    <div class="header-actions">
+      <button class="primary" id="btnCapture" title="Atalho: Ctrl+R">
+        <span>📸</span> Atualizar Viewport
+      </button>
+    </div>
+  </header>
+
+  <!-- Container Principal -->
+  <div class="app-container">
+    
+    <!-- Painel Lateral Descomplicado -->
+    <aside class="sidebar">
+
+      <!-- 1. Resolução do Pixel Art -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>📐 1. Resolução do Pixel Art</span>
+        </div>
+        <div class="form-row">
+          <label for="aspectMode">Formato:</label>
+          <select id="aspectMode">
+            <option value="square" selected>1:1 (Quadrado Sprite)</option>
+            <option value="viewport">Proporcional à Viewport</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="directionCount" title="Captura o modelo orbitando em 360° para spritesheets de jogos MMORPG / RPG">Direções MMORPG:</label>
+          <select id="directionCount">
+            <option value="1" selected>1 Ângulo (Câmera Atual)</option>
+            <option value="4">4 Direções (90° Top-Down / Iso)</option>
+            <option value="8">8 Direções (45° MMORPG Completo)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="pixelScale">Tamanho:</label>
+          <select id="pixelScale">
+            <option value="32">32 × 32</option>
+            <option value="48">48 × 48</option>
+            <option value="64">64 × 64</option>
+            <option value="80">80 × 80</option>
+            <option value="96">96 × 96</option>
+            <option value="112">112 × 112</option>
+            <option value="128">128 × 128</option>
+            <option value="160">160 × 160</option>
+            <option value="192">192 × 192</option>
+            <option value="224">224 × 224</option>
+            <option value="240" selected>240 × 240</option>
+            <option value="256">256 × 256</option>
+            <option value="320">320 × 320</option>
+            <option value="384">384 × 384</option>
+            <option value="480">480 × 480</option>
+            <option value="512">512 × 512</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="fitMode" title="Aproveita o espaço do canvas encaixando o modelo 3D com precisão ou exibe a viewport completa">Encaixe do Modelo:</label>
+          <select id="fitMode">
+            <option value="autocrop" selected>Aproveitar Espaço (Auto-Fit 3D)</option>
+            <option value="viewport">Viewport Completa</option>
+          </select>
+        </div>
+        <div class="slider-group" id="fitPaddingGroup" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span title="Margem de borda em pixels para evitar que contornos e silhueta toquem a borda da imagem">Padding (Margem):</span>
+            <span class="val" id="fitPaddingVal">1 px</span>
+          </div>
+          <input type="range" id="fitPadding" min="0" max="16" value="1">
+        </div>
+        <div class="form-row">
+          <label for="fitAnchor" title="Alinhamento vertical do modelo dentro do canvas">Alinhamento:</label>
+          <select id="fitAnchor">
+            <option value="center" selected>Centralizado</option>
+            <option value="bottom">Base / Piso (Pés no chão)</option>
+            <option value="top">Topo</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="samplingMethod" title="Amostragem Texel Dominante vota a cor majoritária de cada bloco evitando ruído e quebra de linhas finas">Amostragem:</label>
+          <select id="samplingMethod">
+            <option value="modal" selected>⭐ Texel Dominante (Cluster / Sem Ruído)</option>
+            <option value="point">Nítida Point (Nearest)</option>
+            <option value="crisp_mip">Mip-Scale Suavizado</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-top: 6px;">
+          <label for="transparentBg">Fundo Transparente (Perímetro):</label>
+          <input type="checkbox" id="transparentBg" checked>
+        </div>
+      </div>
+
+      <!-- 2. Shading & Dithering (Estilo Addon Blender & Texel Studio) -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>🎨 2. Shading & Limpeza de Pixels</span>
+          <span class="badge-hot">TEXEL RULES</span>
+        </div>
+
+        <div class="form-row">
+          <label for="shadingModel" title="Fonte da iluminação: luz nativa do SketchUp ou Cel/Toon Shading 3D gerado pelas normais reais">Estilo de Sombra:</label>
+          <select id="shadingModel">
+            <option value="sketchup" selected>Luz Nativa do SketchUp</option>
+            <option value="cel_toon">✨ Cel / Toon 3D (RPG Limpo)</option>
+            <option value="flat_albedo">Cores Puras (Flat Albedo)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label for="paletteSelect">Paleta de Cores:</label>
+          <select id="paletteSelect">
+            <option value="none" selected>Original do Modelo (Quantizada)</option>
+            <option value="adaptive16">Adaptativa (16 Cores)</option>
+            <option value="adaptive32">Adaptativa (32 Cores)</option>
+            <option value="endesga32">Endesga 32 (EDG32)</option>
+            <option value="db32">Dawnbringer 32 (DB32)</option>
+            <option value="db16">Dawnbringer 16 (DB16)</option>
+            <option value="resurrect64">Resurrect 64</option>
+            <option value="pico8">PICO-8 (16 Cores)</option>
+            <option value="gameboy_dmg">Game Boy DMG (4 Cores)</option>
+            <option value="cyberpunk">Cyberpunk Neon</option>
+            <option value="monochrome">1-Bit Monocromático</option>
+          </select>
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Elimina ruídos e pixels órfãos isolados, agrupando em clusters sólidos (Conceito Texel Studio)">Limpeza de Órfãos (Clusters)</span>
+            <span class="val" id="orphanCleanVal">2× (Médio)</span>
+          </div>
+          <input type="range" id="orphanClean" min="0" max="4" value="2">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Limite máximo de cores para garantir indexação sólida e sem borrões">Controle de Cores</span>
+            <span class="val" id="maxColorsVal">24 cores</span>
+          </div>
+          <input type="range" id="maxColors" min="4" max="64" step="4" value="24">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Quantização de iluminação / Cel-Shading em faixas discretas (ColorRamp Constant do Blender)">Cel-Shading (Faixas de Luz)</span>
+            <span class="val" id="celStepsVal">Desativado</span>
+          </div>
+          <input type="range" id="celSteps" min="0" max="16" value="0">
+        </div>
+
+        <div class="form-row">
+          <label for="ditherType">Tipo de Dithering:</label>
+          <select id="ditherType">
+            <option value="none" selected>Nenhum</option>
+            <option value="bayer2">Bayer 2×2 (Addon Blender)</option>
+            <option value="bayer4">Bayer 4×4</option>
+          </select>
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Intensidade da matriz de dithering (Soft Light do Blender)">Intensidade Dithering</span>
+            <span class="val" id="ditherAmountVal">20%</span>
+          </div>
+          <input type="range" id="ditherAmount" min="0" max="100" value="20">
+        </div>
+
+        <div class="form-row" style="margin-top: 6px;">
+          <label for="hueShift" title="Luzes mais quentes/douradas e sombras mais frias/arroxeadas">Hue-Shifting (Luz/Sombra):</label>
+          <input type="checkbox" id="hueShift" checked>
+        </div>
+      </div>
+
+      <!-- 3. Texturas & Tratamento HDR -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>🧱 3. Texturas & Tratamento HDR</span>
+          <span class="badge-hot">HDR PRO</span>
+        </div>
+        
+        <div class="form-row">
+          <label for="hdrEnabled" title="Ativa o pipeline de cor HDR em espaço linear (Filmic Tone Mapping)">Sistema HDR:</label>
+          <input type="checkbox" id="hdrEnabled" checked>
+        </div>
+
+        <div class="form-row">
+          <label for="hdrToneMap" title="Curva de Tone Mapping para mapear luzes e sombras">Tone Mapping:</label>
+          <select id="hdrToneMap">
+            <option value="aces" selected>ACES Filmic (Cinema / Unreal)</option>
+            <option value="reinhard">Reinhard (Equilibrado)</option>
+            <option value="neutral">Neutral Filmic</option>
+          </select>
+        </div>
+
+        <div class="slider-group" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span title="Ajusta o ganho de luz em espaço linear (-2.0 a +2.0 EV)">Exposição HDR</span>
+            <span class="val" id="hdrExposureVal">+0.1 EV</span>
+          </div>
+          <input type="range" id="hdrExposure" min="-20" max="20" value="1">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Recupera e ilumina texturas e detalhes em sombras escuras do 3D">Recuperação de Sombras</span>
+            <span class="val" id="hdrShadowRecoveryVal">40%</span>
+          </div>
+          <input type="range" id="hdrShadowRecovery" min="0" max="100" value="40">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Glow suave em reflexos e pontos de alta intensidade de luz">Brilho de Altas Luzes (Bloom)</span>
+            <span class="val" id="hdrBloomVal">25%</span>
+          </div>
+          <input type="range" id="hdrBloom" min="0" max="100" value="25">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Evita que juntas de tijolos e ranhuras de textura se misturem e borrem">Nitidez de Tijolos / Ranhuras</span>
+            <span class="val" id="brickBoostVal">80%</span>
+          </div>
+          <input type="range" id="brickBoost" min="0" max="100" value="80">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span>Saturação de Cor</span>
+            <span class="val" id="saturationVal">+10</span>
+          </div>
+          <input type="range" id="saturation" min="-50" max="80" value="10">
+        </div>
+      </div>
+
+      <!-- 4. Bordas Pixel-Perfect -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>✏️ 4. Bordas & Silhueta</span>
+        </div>
+        <div class="form-row">
+          <label for="outlineMode">Tipo de Contorno:</label>
+          <select id="outlineMode">
+            <option value="outer" selected>Contorno Externo 1px (Preserva Textura)</option>
+            <option value="inner">Contorno Interno 1px (Silhueta)</option>
+            <option value="none">Sem Contorno</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="outlineColor">Cor do Traço:</label>
+          <select id="outlineColor">
+            <option value="selout" selected>Sombreado Natural (Sel-Out)</option>
+            <option value="black">Preto Clássico</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-top: 6px;">
+          <label for="cleanPixelPerfect" title="Remove cantos duplos em L, garantindo escadinhas estritas de 1px">Limpeza Pixel-Perfect:</label>
+          <input type="checkbox" id="cleanPixelPerfect" checked>
+        </div>
+        <div class="slider-group" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span title="Detecta quinas 3D internas. Deixe baixo para não riscar tijolos e texturas">Linhas Internas 3D</span>
+            <span class="val" id="innerEdgesVal">0%</span>
+          </div>
+          <input type="range" id="innerEdges" min="0" max="100" value="0">
+        </div>
+      </div>
+
+      <!-- 5. Normal Map (Motor Físico NormalMap-Online) -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>🧭 5. Normal Map (NormalMap-Online)</span>
+          <span class="badge-hot">ALGORITMO REAL</span>
+        </div>
+
+        <div class="form-row">
+          <label for="normalSourceMode" title="Método de cálculo das normais">Método de Cálculo:</label>
+          <select id="normalSourceMode">
+            <option value="geom" selected>📐 Geometria 3D Real (Faces do SketchUp)</option>
+            <option value="photometric">☀️ 4-Way Solar (NormalMap from Photos)</option>
+            <option value="height">⛰️ Heightmap Convolução (NormalMap-Online)</option>
+            <option value="combined">✨ Híbrido (Geometria + Micro-detalhes)</option>
+          </select>
+        </div>
+
+        <div class="slider-group" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span title="Força da inclinação angular dos vetores normais (Strength do NormalMap-Online)">Profundidade (Strength)</span>
+            <span class="val" id="normalStrengthVal">3.0×</span>
+          </div>
+          <input type="range" id="normalStrength" min="0.1" max="10.0" step="0.1" value="3.0">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Escala espacial de amostragem da curvatura (Level do NormalMap-Online: 1 a 10)">Nível de Detalhe (Level)</span>
+            <span class="val" id="normalLevelVal">5</span>
+          </div>
+          <input type="range" id="normalLevel" min="1" max="10" step="1" value="5">
+        </div>
+
+        <div class="form-row">
+          <label for="normalFilterType" title="Operador de convolução espacial">Filtro de Gradiente:</label>
+          <select id="normalFilterType">
+            <option value="scharr" selected>Scharr (Suave e Preciso)</option>
+            <option value="sobel">Sobel Clássico</option>
+          </select>
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Suavização bilateral das facetas (para esferas/cilindros)">Suavização de Curvatura</span>
+            <span class="val" id="surfaceSmoothingVal">0%</span>
+          </div>
+          <input type="range" id="surfaceSmoothing" min="0" max="100" value="0">
+        </div>
+
+        <div class="form-row">
+          <label title="Inversões de canais para compatibilidade entre motores">Inversão de Eixos:</label>
+          <div style="display: flex; gap: 10px; font-size: 11px;">
+            <label><input type="checkbox" id="invertR"> Invert X (R)</label>
+            <label><input type="checkbox" id="invertG"> Invert Y (G)</label>
+            <label><input type="checkbox" id="invertH"> Invert Z (H)</label>
+          </div>
+        </div>
+
+        <div class="form-hint" style="margin-top: 6px;">
+          ✓ Baseado no algoritmo matemático do <strong>NormalMap-Online</strong>.<br>
+          Fundo transparente | Padrão: <strong>Unity 2D / OpenGL (Y+)</strong>.
+        </div>
+      </div>
+
+      <!-- 6. Teste de Iluminação 3D Interativa -->
+      <div class="panel" id="panelLightControls">
+        <div class="panel-title">
+          <span>💡 6. Teste de Luz Dinâmica 3D</span>
+          <span class="badge-hot">INTERATIVO</span>
+        </div>
+
+        <div class="form-row">
+          <label for="lightModeType">Modo de Visualização:</label>
+          <select id="lightModeType">
+            <option value="sprite" selected>Sprite Colorido + Luz 3D</option>
+            <option value="clay">Geometria Pura 3D (Clay / Branco)</option>
+          </select>
+        </div>
+
+        <div class="slider-group" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span title="Altura da fonte de luz em relação ao plano do sprite">Altura da Luz (Z)</span>
+            <span class="val" id="lightZVal">45%</span>
+          </div>
+          <input type="range" id="lightZ" min="5" max="150" value="45">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Intensidade da luz direta sobre as faces 3D">Intensidade da Luz</span>
+            <span class="val" id="lightIntensityVal">1.5×</span>
+          </div>
+          <input type="range" id="lightIntensity" min="5" max="30" value="15">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Iluminação ambiente para não deixar sombras 100% pretas">Luz Ambiente</span>
+            <span class="val" id="lightAmbientVal">25%</span>
+          </div>
+          <input type="range" id="lightAmbient" min="0" max="80" value="25">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label">
+            <span title="Reflexo especular acetinado nas quinas e superfícies da geometria">Brilho Especular (Gloss)</span>
+            <span class="val" id="lightSpecularVal">40%</span>
+          </div>
+          <input type="range" id="lightSpecular" min="0" max="100" value="40">
+        </div>
+
+        <div class="form-row">
+          <label for="lightColor">Cor da Luz:</label>
+          <input type="color" id="lightColor" value="#ffffff" style="width: 50px; height: 26px; border: none; cursor: pointer; border-radius: 4px; background: transparent;">
+        </div>
+
+        <div class="form-hint" style="margin-top: 6px;">
+          💡 Mova o mouse sobre a tela para mover a fonte de luz 3D ao redor do objeto em tempo real.
+        </div>
+      </div>
+
+      <!-- Alinhar Câmera (Opcional) -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>📐 Alinhar Câmera (Opcional)</span>
+        </div>
+        <div class="cam-quick-btns">
+          <button data-cam="dim_sw">2:1 Sul-Oeste</button>
+          <button data-cam="dim_se">2:1 Sul-Leste</button>
+          <button data-cam="front">Frontal</button>
+          <button data-cam="top">Topo</button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Área de Visualização (Viewport) -->
+    <main class="viewport-area">
+      
+      <!-- Toolbar -->
+      <div class="viewport-toolbar">
+        <div class="viewport-tools-group">
+          <button data-zoom="1">100%</button>
+          <button data-zoom="2">200%</button>
+          <button data-zoom="3" class="active">300%</button>
+          <button data-zoom="5">500%</button>
+          <button id="btnResetZoom">Centralizar</button>
+          <button id="btnToggleGrid">Grade</button>
+        </div>
+
+        <!-- Controles de Frame / Turntable (MMORPG) -->
+        <div class="viewport-tools-group turntable-group" id="turntableControls" style="display: none;">
+          <button id="btnPrevFrame" title="Ângulo Anterior">◀</button>
+          <span class="turntable-label" id="turntableLabel">Frame 1/1 (0°)</span>
+          <button id="btnNextFrame" title="Próximo Ângulo">▶</button>
+          <button id="btnPlayTurntable" title="Girar 360° continuamente">🔄 Girar</button>
+        </div>
+
+        <div class="viewport-tools-group">
+          <span style="color: var(--text-muted); font-size: 11px;">Zoom: <strong id="zoomDisplay" style="color: #fff;">300%</strong></span>
+          <button id="btnCompare" title="Segure para comparar com o 3D">👁️ Ver Original</button>
+        </div>
+      </div>
+
+      <!-- Conteúdo do Canvas -->
+      <div class="viewport-content" id="viewportContent">
+        <div class="status-pill">
+          <div class="status-dot"></div>
+          <span id="statusText">Carregando Viewport...</span>
+        </div>
+
+        <div id="canvasContainer">
+          <canvas id="pixelCanvas" width="240" height="135"></canvas>
+          <div class="pixel-grid" id="pixelGrid"></div>
+        </div>
+      </div>
+
+      <!-- Barra Inferior de Exportação -->
+      <footer class="bottom-bar">
+        <div class="stats">
+          <span>Tamanho: <strong id="statsRes">240 × 135 px</strong></span>
+          <span>Cores: <strong id="statsColors">--</strong></span>
+          <span>Status: <strong id="statsMode" style="color: #818cf8;">Pixel Art</strong></span>
+        </div>
+
+        <div class="export-group">
+          <label for="upscaleSelect" style="color: var(--text-muted); font-size: 11px;">Exportar:</label>
+          <select id="upscaleSelect" style="width: 100px;">
+            <option value="1">1× (Nativo)</option>
+            <option value="2">2×</option>
+            <option value="4" selected>4× (Nítido)</option>
+            <option value="8">8×</option>
+          </select>
+          
+          <button id="btnSaveImage">
+            💾 Salvar Frame PNG
+          </button>
+          <button id="btnSaveSheet" style="display: none; background: #3b82f6; color: white;" title="Gera uma tira horizontal com todas as direções para MMORPG">
+            🎞️ Salvar Spritesheet
+          </button>
+          <button id="btnSaveNormal">
+            🧭 Salvar Normal Map
+          </button>
+          <button class="success" id="btnSavePackage">
+            📦 Exportar Pacote Completo
+          </button>
+        </div>
+      </footer>
+
+    </main>
+
+  </div>
+
+  <script src="palettes.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

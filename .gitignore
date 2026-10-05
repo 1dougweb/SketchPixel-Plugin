@@ -1,0 +1,16 @@
+# Sistema e Arquivos Temporários
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Logs e arquivos de cache
+*.log
+*.tmp
+*.bak
+
+# Arquivos de exportação temporários
+viewport_*.png
+temp_*.png
+solar_*.png
