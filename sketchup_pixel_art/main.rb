@@ -472,16 +472,19 @@ module SketchPixel
     # Barra de Ferramentas do SketchUp com atalhos de câmera
     @toolbar = UI::Toolbar.new('SketchPixel 2.5D')
 
-    icon_path = File.join(__dir__, 'icons', 'pixel_icon.png')
+    # Helper para associar ícones pequeno e grande
+    assign_icons = lambda do |command, base_name|
+      small = File.join(__dir__, 'icons', "#{base_name}.png")
+      large = File.join(__dir__, 'icons', "#{base_name}_32.png")
+      command.small_icon = File.exist?(small) ? small : icon_path
+      command.large_icon = File.exist?(large) ? large : command.small_icon
+    end
 
     # 1. Botão Principal: Abrir Painel
     cmd_open = UI::Command.new('SketchPixel') { SketchPixel.open_dialog }
     cmd_open.tooltip = 'Abrir Painel Pixel Art & Normal Map'
     cmd_open.status_bar_text = 'Abre o renderizador SketchPixel 2.5D.'
-    if File.exist?(icon_path)
-      cmd_open.small_icon = icon_path
-      cmd_open.large_icon = icon_path
-    end
+    assign_icons.call(cmd_open, 'pixel_icon')
     @toolbar.add_item(cmd_open)
 
     # 2. Câmera Top-Down Médio 45°
@@ -491,12 +494,7 @@ module SketchPixel
     }
     cmd_topmed.tooltip = 'Alinhar Câmera: Top-Down Médio (45° MMORPG)'
     cmd_topmed.status_bar_text = 'Define a câmera para o ângulo médio de 45° clássico de MMORPGs.'
-    cmd_topmed_icon = File.join(__dir__, 'icons', 'cam_topmed.png')
-    cmd_topmed_use_icon = File.exist?(cmd_topmed_icon) ? cmd_topmed_icon : icon_path
-    if File.exist?(cmd_topmed_use_icon)
-      cmd_topmed.small_icon = cmd_topmed_use_icon
-      cmd_topmed.large_icon = cmd_topmed_use_icon
-    end
+    assign_icons.call(cmd_topmed, 'cam_topmed')
     @toolbar.add_item(cmd_topmed)
 
     # 3. Câmera Dimétrica 2:1 (Isométrica 2.5D)
@@ -506,12 +504,7 @@ module SketchPixel
     }
     cmd_iso.tooltip = 'Alinhar Câmera: Dimétrica 2:1 (Isométrica)'
     cmd_iso.status_bar_text = 'Define a câmera para projeção dimétrica isométrica 2:1.'
-    cmd_iso_icon = File.join(__dir__, 'icons', 'cam_iso.png')
-    cmd_iso_use_icon = File.exist?(cmd_iso_icon) ? cmd_iso_icon : icon_path
-    if File.exist?(cmd_iso_use_icon)
-      cmd_iso.small_icon = cmd_iso_use_icon
-      cmd_iso.large_icon = cmd_iso_use_icon
-    end
+    assign_icons.call(cmd_iso, 'cam_iso')
     @toolbar.add_item(cmd_iso)
 
     # 4. Câmera Topo Puro 90°
@@ -521,12 +514,7 @@ module SketchPixel
     }
     cmd_top.tooltip = 'Alinhar Câmera: Topo Puro (90° Planta)'
     cmd_top.status_bar_text = 'Define a câmera diretamente olhando de cima (planta/top-down puro).'
-    cmd_top_icon = File.join(__dir__, 'icons', 'cam_top.png')
-    cmd_top_use_icon = File.exist?(cmd_top_icon) ? cmd_top_icon : icon_path
-    if File.exist?(cmd_top_use_icon)
-      cmd_top.small_icon = cmd_top_use_icon
-      cmd_top.large_icon = cmd_top_use_icon
-    end
+    assign_icons.call(cmd_top, 'cam_top')
     @toolbar.add_item(cmd_top)
 
     # 5. Câmera Frontal 0°
@@ -536,12 +524,7 @@ module SketchPixel
     }
     cmd_front.tooltip = 'Alinhar Câmera: Frontal (0°)'
     cmd_front.status_bar_text = 'Define a câmera para visão frontal plana ortográfica.'
-    cmd_front_icon = File.join(__dir__, 'icons', 'cam_front.png')
-    cmd_front_use_icon = File.exist?(cmd_front_icon) ? cmd_front_icon : icon_path
-    if File.exist?(cmd_front_use_icon)
-      cmd_front.small_icon = cmd_front_use_icon
-      cmd_front.large_icon = cmd_front_use_icon
-    end
+    assign_icons.call(cmd_front, 'cam_front')
     @toolbar.add_item(cmd_front)
 
     @toolbar.restore if @toolbar.get_last_state == TB_VISIBLE
