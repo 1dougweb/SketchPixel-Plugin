@@ -413,16 +413,73 @@
         </div>
       </div>
 
-      <!-- Alinhar Câmera (Opcional) -->
+      <!-- Alinhar Câmera -->
       <div class="panel">
         <div class="panel-title">
-          <span>📐 Alinhar Câmera (Opcional)</span>
+          <span>📐 Configurar Câmera 3D</span>
+          <span class="badge-hot" style="background: #3b82f6;">TOPDOWN / ISO</span>
         </div>
+
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+          Posições recomendadas para jogos 2.5D e MMORPG:
+        </div>
+
         <div class="cam-quick-btns">
-          <button data-cam="dim_sw">2:1 Sul-Oeste</button>
-          <button data-cam="dim_se">2:1 Sul-Leste</button>
-          <button data-cam="front">Frontal</button>
-          <button data-cam="top">Topo</button>
+          <button data-cam="top_med" style="border-color: #6366f1; color: #a5b4fc; font-weight: 700;" title="Inclinação de 45° clássica de MMORPGs (Tibia, Pokemon, RPG Maker)">
+            🎮 Top-Down Médio 45°
+          </button>
+          <button data-cam="top_high" title="Inclinação mais íngreme de 60°">
+            🕹️ Top-Down Alto 60°
+          </button>
+          <button data-cam="top_low" title="Inclinação suave de 30° (3/4 Frontal)">
+            🕹️ Top-Down 3/4 (30°)
+          </button>
+          <button data-cam="dim_sw" title="Projeção dimétrica 2:1 tradicional">
+            📐 Dimétrica 2:1 (Iso)
+          </button>
+          <button data-cam="front" title="Visão ortográfica frontal">
+            👤 Frontal (0°)
+          </button>
+          <button data-cam="top" title="Vista superior direta (90°)">
+            🔝 Topo Puro (90°)
+          </button>
+        </div>
+
+        <!-- Ajuste Manual de Ângulo -->
+        <div style="margin-top: 10px; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">
+            Ajuste Livre de Ângulo:
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span title="Ângulo vertical de inclinação da câmera (0° Frontal a 90° Topo)">Inclinação (Pitch):</span>
+              <span class="val" id="camPitchVal">45.0°</span>
+            </div>
+            <input type="range" id="camPitch" min="0" max="90" step="1" value="45">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span title="Giro horizontal ao redor do modelo (270° = Sul / Frente)">Giro (Yaw):</span>
+              <span class="val" id="camYawVal">270.0° (Sul)</span>
+            </div>
+            <input type="range" id="camYaw" min="0" max="360" step="5" value="270">
+          </div>
+
+          <div class="form-row" style="margin-top: 4px;">
+            <label for="camFitCheck" style="font-size: 11px;">Enquadrar Modelo (Zoom):</label>
+            <input type="checkbox" id="camFitCheck">
+          </div>
+
+          <div style="display: flex; gap: 6px; margin-top: 8px;">
+            <button id="btnApplyCustomCam" class="primary" style="flex: 1; padding: 6px; font-size: 11px;">
+              🎯 Aplicar Ângulo
+            </button>
+            <button id="btnSyncCurrentCam" style="padding: 6px; font-size: 11px;" title="Lê a posição atual da câmera no SketchUp">
+              🔄 Ler Atual
+            </button>
+          </div>
         </div>
       </div>
 
@@ -440,6 +497,22 @@
           <button data-zoom="5">500%</button>
           <button id="btnResetZoom">Centralizar</button>
           <button id="btnToggleGrid">Grade</button>
+        </div>
+
+        <!-- Câmera Rápida na Toolbar -->
+        <div class="viewport-tools-group">
+          <span style="color: var(--text-muted); font-size: 11px;">🎥 Câmera:</span>
+          <select id="quickCamSelect" style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-main); border: 1px solid var(--border-color); cursor: pointer;">
+            <option value="" disabled selected>Posições de Câmera...</option>
+            <option value="top_med">🎮 Top-Down Médio (45° MMORPG)</option>
+            <option value="top_high">🕹️ Top-Down Alto (60° RPG)</option>
+            <option value="top_low">🕹️ Top-Down 3/4 (30° Suave)</option>
+            <option value="dim_sw">📐 Dimétrica 2:1 Sul-Oeste</option>
+            <option value="dim_se">📐 Dimétrica 2:1 Sul-Leste</option>
+            <option value="iso_sw">📐 Isométrica Real (35.3°)</option>
+            <option value="front">👤 Frontal (0°)</option>
+            <option value="top">🔝 Topo Puro (90° Planta)</option>
+          </select>
         </div>
 
         <!-- Controles de Frame / Turntable (MMORPG) -->

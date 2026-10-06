@@ -380,8 +380,26 @@ module SketchPixel
         end
       end
 
-      dlg.add_action_callback('setCameraPreset') do |_context, preset_name|
-        CameraHelper.set_preset(preset_name.to_s, fit: false)
+      dlg.add_action_callback('setCameraPreset') do |_context, param|
+        if param.to_s.start_with?('{')
+          data = begin JSON.parse(param.to_s) rescue {} end
+          CameraHelper.set_preset(data['preset'].to_s, fit: (data['fit'] == true))
+        else
+          CameraHelper.set_preset(param.to_s, fit: false)
+        end
+      end
+
+      dlg.add_action_callback('setCustomCamera') do |_context, payload_json|
+        data = begin JSON.parse(payload_json.to_s) rescue {} end
+        yaw = data['yaw'].to_f
+        pitch = data['pitch'].to_f
+        fit = (data['fit'] == true)
+        CameraHelper.set_camera_angles(yaw, pitch, fit: fit)
+      end
+
+      dlg.add_action_callback('getCameraAngles') do |_context|
+        angles = CameraHelper.get_current_camera_angles
+        dlg.execute_script("if (window.onCameraAnglesReceived) window.onCameraAnglesReceived(#{angles.to_json});") rescue nil
       end
 
       dlg.add_action_callback('saveImage') do |_context, payload_json|
@@ -440,21 +458,92 @@ module SketchPixel
   unless @ui_created
     @ui_created = true
 
+    # Menu de Extensões com submenu completo
     menu = UI.menu('Extensions')
-    menu.add_item('SketchPixel - Pixel Art Renderer') { SketchPixel.open_dialog }
+    sub = menu.add_submenu('SketchPixel 2.5D')
+    sub.add_item('Abrir Painel Pixel Art') { SketchPixel.open_dialog }
+    sub.add_separator
+    sub.add_item('Câmera: Top-Down Médio (45° MMORPG)') { CameraHelper.set_preset('top_med', fit: false) }
+    sub.add_item('Câmera: Top-Down Alto (60° RPG)')     { CameraHelper.set_preset('top_high', fit: false) }
+    sub.add_item('Câmera: Dimétrica 2:1 (Isométrica)')   { CameraHelper.set_preset('dim_sw', fit: false) }
+    sub.add_item('Câmera: Topo Puro (90° Planta)')      { CameraHelper.set_preset('top', fit: false) }
+    sub.add_item('Câmera: Frontal (0°)')                { CameraHelper.set_preset('front', fit: false) }
 
+    # Barra de Ferramentas do SketchUp com atalhos de câmera
     @toolbar = UI::Toolbar.new('SketchPixel 2.5D')
-    cmd = UI::Command.new('SketchPixel') { SketchPixel.open_dialog }
-    cmd.tooltip = 'Abrir Renderizador Pixel Art'
-    cmd.status_bar_text = 'Abre o painel do SketchPixel.'
-    
-    icon_path = File.join(__dir__, 'icons', 'pixel_icon.png')
-    if File.exist?(icon_path)
-      cmd.small_icon = icon_path
-      cmd.large_icon = icon_path
-    end
 
-    @toolbar.add_item(cmd)
+    icon_path = File.join(__dir__, 'icons', 'pixel_icon.png')
+
+    # 1. Botão Principal: Abrir Painel
+    cmd_open = UI::Command.new('SketchPixel') { SketchPixel.open_dialog }
+    cmd_open.tooltip = 'Abrir Painel Pixel Art & Normal Map'
+    cmd_open.status_bar_text = 'Abre o renderizador SketchPixel 2.5D.'
+    if File.exist?(icon_path)
+      cmd_open.small_icon = icon_path
+      cmd_open.large_icon = icon_path
+    end
+    @toolbar.add_item(cmd_open)
+
+    # 2. Câmera Top-Down Médio 45°
+    cmd_topmed = UI::Command.new('Top-Down Médio') {
+      CameraHelper.set_preset('top_med', fit: false)
+      SketchPixel.dialog&.execute_script("if(window.onCameraPresetApplied) window.onCameraPresetApplied('top_med');") rescue nil
+    }
+    cmd_topmed.tooltip = 'Alinhar Câmera: Top-Down Médio (45° MMORPG)'
+    cmd_topmed.status_bar_text = 'Define a câmera para o ângulo médio de 45° clássico de MMORPGs.'
+    cmd_topmed_icon = File.join(__dir__, 'icons', 'cam_topmed.png')
+    cmd_topmed_use_icon = File.exist?(cmd_topmed_icon) ? cmd_topmed_icon : icon_path
+    if File.exist?(cmd_topmed_use_icon)
+      cmd_topmed.small_icon = cmd_topmed_use_icon
+      cmd_topmed.large_icon = cmd_topmed_use_icon
+    end
+    @toolbar.add_item(cmd_topmed)
+
+    # 3. Câmera Dimétrica 2:1 (Isométrica 2.5D)
+    cmd_iso = UI::Command.new('Dimétrica 2:1') {
+      CameraHelper.set_preset('dim_sw', fit: false)
+      SketchPixel.dialog&.execute_script("if(window.onCameraPresetApplied) window.onCameraPresetApplied('dim_sw');") rescue nil
+    }
+    cmd_iso.tooltip = 'Alinhar Câmera: Dimétrica 2:1 (Isométrica)'
+    cmd_iso.status_bar_text = 'Define a câmera para projeção dimétrica isométrica 2:1.'
+    cmd_iso_icon = File.join(__dir__, 'icons', 'cam_iso.png')
+    cmd_iso_use_icon = File.exist?(cmd_iso_icon) ? cmd_iso_icon : icon_path
+    if File.exist?(cmd_iso_use_icon)
+      cmd_iso.small_icon = cmd_iso_use_icon
+      cmd_iso.large_icon = cmd_iso_use_icon
+    end
+    @toolbar.add_item(cmd_iso)
+
+    # 4. Câmera Topo Puro 90°
+    cmd_top = UI::Command.new('Topo 90°') {
+      CameraHelper.set_preset('top', fit: false)
+      SketchPixel.dialog&.execute_script("if(window.onCameraPresetApplied) window.onCameraPresetApplied('top');") rescue nil
+    }
+    cmd_top.tooltip = 'Alinhar Câmera: Topo Puro (90° Planta)'
+    cmd_top.status_bar_text = 'Define a câmera diretamente olhando de cima (planta/top-down puro).'
+    cmd_top_icon = File.join(__dir__, 'icons', 'cam_top.png')
+    cmd_top_use_icon = File.exist?(cmd_top_icon) ? cmd_top_icon : icon_path
+    if File.exist?(cmd_top_use_icon)
+      cmd_top.small_icon = cmd_top_use_icon
+      cmd_top.large_icon = cmd_top_use_icon
+    end
+    @toolbar.add_item(cmd_top)
+
+    # 5. Câmera Frontal 0°
+    cmd_front = UI::Command.new('Frontal') {
+      CameraHelper.set_preset('front', fit: false)
+      SketchPixel.dialog&.execute_script("if(window.onCameraPresetApplied) window.onCameraPresetApplied('front');") rescue nil
+    }
+    cmd_front.tooltip = 'Alinhar Câmera: Frontal (0°)'
+    cmd_front.status_bar_text = 'Define a câmera para visão frontal plana ortográfica.'
+    cmd_front_icon = File.join(__dir__, 'icons', 'cam_front.png')
+    cmd_front_use_icon = File.exist?(cmd_front_icon) ? cmd_front_icon : icon_path
+    if File.exist?(cmd_front_use_icon)
+      cmd_front.small_icon = cmd_front_use_icon
+      cmd_front.large_icon = cmd_front_use_icon
+    end
+    @toolbar.add_item(cmd_front)
+
     @toolbar.restore if @toolbar.get_last_state == TB_VISIBLE
 
     file_loaded?(__FILE__)

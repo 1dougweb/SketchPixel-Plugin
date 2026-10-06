@@ -48,10 +48,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function waitForSketchUp(attempts) {
   if (window.sketchup && (window.sketchup.captureCurrentViewport || window.sketchup.captureViewport)) {
+    callSketchUp('getCameraAngles', '');
     requestViewportCapture();
   } else if (attempts < 40) {
     setTimeout(() => waitForSketchUp(attempts + 1), 60);
   } else {
+    callSketchUp('getCameraAngles', '');
     requestViewportCapture();
   }
 }
@@ -130,14 +132,47 @@ function setupUI() {
   tabNormal.addEventListener('click', () => setMode('normal'));
   tabLight.addEventListener('click', () => setMode('light'));
 
-  // Botões de Câmera
+  // Controles de Câmera (Presets rápidos e Toolbar)
   document.querySelectorAll('[data-cam]').forEach(btn => {
     btn.addEventListener('click', () => {
       const preset = btn.getAttribute('data-cam');
-      callSketchUp('setCameraPreset', preset);
-      setTimeout(requestViewportCapture, 300);
+      applyCameraPreset(preset);
     });
   });
+
+  const quickCam = document.getElementById('quickCamSelect');
+  if (quickCam) {
+    quickCam.addEventListener('change', () => {
+      const preset = quickCam.value;
+      if (!preset) return;
+      applyCameraPreset(preset);
+      quickCam.value = '';
+    });
+  }
+
+  // Sliders manuais de Câmera Livre (Pitch e Yaw)
+  const camPitchEl = document.getElementById('camPitch');
+  const camYawEl = document.getElementById('camYaw');
+  if (camPitchEl) camPitchEl.addEventListener('input', updateCamSliderLabels);
+  if (camYawEl) camYawEl.addEventListener('input', updateCamSliderLabels);
+
+  const btnApplyCustomCam = document.getElementById('btnApplyCustomCam');
+  if (btnApplyCustomCam) {
+    btnApplyCustomCam.addEventListener('click', () => {
+      const pitch = parseFloat(camPitchEl?.value || 45);
+      const yaw = parseFloat(camYawEl?.value || 270);
+      const fit = document.getElementById('camFitCheck')?.checked || false;
+      callSketchUp('setCustomCamera', JSON.stringify({ yaw, pitch, fit }));
+      setTimeout(requestViewportCapture, 350);
+    });
+  }
+
+  const btnSyncCurrentCam = document.getElementById('btnSyncCurrentCam');
+  if (btnSyncCurrentCam) {
+    btnSyncCurrentCam.addEventListener('click', () => {
+      callSketchUp('getCameraAngles', '');
+    });
+  }
 
   // Ações
   document.getElementById('btnCapture').addEventListener('click', requestViewportCapture);
@@ -354,6 +389,63 @@ function loadFrame(index, callback) {
     if (callback) callback();
   });
 }
+
+function applyCameraPreset(preset) {
+  const fit = document.getElementById('camFitCheck')?.checked || false;
+  callSketchUp('setCameraPreset', JSON.stringify({ preset, fit }));
+
+  const presetAngles = {
+    'top_med':  { pitch: 45, yaw: 270 },
+    'top_high': { pitch: 60, yaw: 270 },
+    'top_low':  { pitch: 30, yaw: 270 },
+    'dim_sw':   { pitch: 30, yaw: 225 },
+    'dim_se':   { pitch: 30, yaw: 315 },
+    'iso_sw':   { pitch: 35.3, yaw: 225 },
+    'front':    { pitch: 0,  yaw: 270 },
+    'top':      { pitch: 89.9, yaw: 270 }
+  };
+  if (presetAngles[preset]) {
+    setCameraSliderValues(presetAngles[preset].yaw, presetAngles[preset].pitch);
+  }
+  setTimeout(requestViewportCapture, 350);
+}
+
+function updateCamSliderLabels() {
+  const camPitchEl = document.getElementById('camPitch');
+  const camYawEl = document.getElementById('camYaw');
+  const camPitchVal = document.getElementById('camPitchVal');
+  const camYawVal = document.getElementById('camYawVal');
+
+  if (camPitchEl && camPitchVal) {
+    camPitchVal.textContent = `${parseFloat(camPitchEl.value).toFixed(1)}°`;
+  }
+  if (camYawEl && camYawVal) {
+    const y = parseFloat(camYawEl.value);
+    let dir = '';
+    if (y >= 225 && y <= 315) dir = ' (Sul / Frente)';
+    else if (y >= 45 && y <= 135) dir = ' (Norte / Trás)';
+    else if (y > 135 && y < 225) dir = ' (Oeste / Esq)';
+    else dir = ' (Leste / Dir)';
+    camYawVal.textContent = `${y.toFixed(1)}°${dir}`;
+  }
+}
+
+function setCameraSliderValues(yaw, pitch) {
+  const pEl = document.getElementById('camPitch');
+  const yEl = document.getElementById('camYaw');
+  if (pEl) pEl.value = Math.round(pitch);
+  if (yEl) yEl.value = Math.round(yaw);
+  updateCamSliderLabels();
+}
+
+window.onCameraAnglesReceived = function(data) {
+  if (!data) return;
+  setCameraSliderValues(data.yaw, data.pitch);
+};
+
+window.onCameraPresetApplied = function(preset) {
+  applyCameraPreset(preset);
+};
 
 // Callback invocado pelo Ruby com todos os passes físicos do SketchUp
 window.onPhysicalPassesLoaded = function(payload) {
