@@ -12,6 +12,7 @@ let topPassImage = null;
 let sourceAspect = 16 / 9;
 let processedImageData = null;
 let normalImageData = null;
+let currentOutlineMap = null;
 
 let capturedFrames = [];
 let currentFrameIndex = 0;
@@ -67,7 +68,7 @@ function setupUI() {
     'hdrEnabled', 'hdrToneMap', 'hdrExposure', 'hdrShadowRecovery', 'hdrBloom', 'brickBoost', 'saturation',
     'outlineMode', 'outlineColor', 'cleanPixelPerfect', 'innerEdges',
     'normalSourceMode', 'normalStrength', 'normalLevel', 'normalFilterType',
-    'surfaceSmoothing', 'invertR', 'invertG', 'invertH', 'transparentBg',
+    'surfaceSmoothing', 'invertR', 'invertG', 'invertH', 'normalBgMode', 'normalExcludeOutline', 'transparentBg',
     'lightModeType', 'lightZ', 'lightIntensity', 'lightAmbient', 'lightSpecular', 'lightColor'
   ];
 
@@ -1082,19 +1083,24 @@ function applyProcessing() {
     cleanOrphanPixels(data, targetW, targetH, orphanClean);
   }
 
+  // Salva cópia pura da geometria antes dos contornos serem desenhados (para cálculo de relevo sem artefatos)
+  const preOutlineData = new Uint8ClampedArray(data);
+
   // 11. Bordas e Silhueta Pixel-Perfect de Alta Definição
+  let strokeMap = null;
   const outlineMode = document.getElementById('outlineMode')?.value || 'outer';
   if (outlineMode !== 'none') {
     const outlineColor = document.getElementById('outlineColor')?.value || 'selout';
     const cleanPP = document.getElementById('cleanPixelPerfect')?.checked ?? true;
     const innerSens = parseInt(document.getElementById('innerEdges')?.value) || 0;
-    applyMasterPixelArtOutlines(data, targetW, targetH, outlineMode, outlineColor, cleanPP, innerSens);
+    strokeMap = applyMasterPixelArtOutlines(data, targetW, targetH, outlineMode, outlineColor, cleanPP, innerSens);
   }
 
+  currentOutlineMap = strokeMap;
   processedImageData = imgData;
 
   // 12. Calcular Normal Map baseado 100% na geometria, luz e sombra reais do SketchUp
-  generatePhysicalNormalMap(data, shadingData, eastData, westData, topData, geomNormalData, targetW, targetH);
+  generatePhysicalNormalMap(preOutlineData, shadingData, eastData, westData, topData, geomNormalData, targetW, targetH, currentOutlineMap);
 
   // 13. Exibir
   renderActiveMode();
@@ -1695,6 +1701,8 @@ function applyMasterPixelArtOutlines(data, width, height, mode, colorMode, clean
       data[idx + 3] = 255;
     }
   }
+
+  return strokeMap;
 }
 
 // Callback quando os 3 passos solares do SketchUp estão prontos
@@ -1745,7 +1753,7 @@ window.onSolarPassesReady = function() {
 // Suporta: Geometria 3D Real, 4-Way Solar Photos, Heightmap Sobel/Scharr & Híbrido
 // Padrão OpenGL / Unity (Y+): R = (Nx*0.5+0.5)*255, G = (Ny*0.5+0.5)*255, B = (Nz*0.5+0.5)*255
 // =============================================================================
-function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData, topData, geomNormalData, width, height) {
+function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData, topData, geomNormalData, width, height, strokeMap = null) {
   normalImageData = ctx.createImageData(width, height);
   const nData = normalImageData.data;
 
@@ -1757,11 +1765,13 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
   const invR = document.getElementById('invertR')?.checked || false;
   const invG = document.getElementById('invertG')?.checked || false;
   const invH = document.getElementById('invertH')?.checked || false;
+  const normalBgMode = document.getElementById('normalBgMode')?.value || 'purple';
+  const excludeOutline = document.getElementById('normalExcludeOutline')?.checked ?? true;
 
   const rawNx = new Float32Array(width * height);
   const rawNy = new Float32Array(width * height);
   const rawNz = new Float32Array(width * height);
-  const validMask = new Uint8Array(width * height);
+  const validMask = new Uint8Array(width * height); // 0 = Fundo, 1 = Geometria/Objeto, 2 = Outline de Pixel Art
 
   const hasGeomNormals = !!(geomNormalData && geomNormalData.length >= width * height * 4);
 
@@ -1789,6 +1799,15 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
       const pIdx = y * width + x;
       const idx = pIdx * 4;
       const alpha = diffuseData[idx + 3];
+
+      // Outline de pixel art: manter normal plana neutra #7F7FFF sem deformação
+      if (excludeOutline && strokeMap && strokeMap[pIdx] === 1) {
+        validMask[pIdx] = 2; // Outline de Pixel Art
+        rawNx[pIdx] = 0;
+        rawNy[pIdx] = 0;
+        rawNz[pIdx] = 1;
+        continue;
+      }
 
       // Máscara precisa de objeto vs fundo transparente
       const isObject = (alpha >= 32) || (hasGeomNormals && geomNormalData[idx + 3] > 32);
@@ -1906,7 +1925,7 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const pIdx = y * width + x;
-        if (validMask[pIdx] === 0) {
+        if (validMask[pIdx] !== 1) {
           smoothNx[pIdx] = 0; smoothNy[pIdx] = 0; smoothNz[pIdx] = 1;
           continue;
         }
@@ -1926,7 +1945,7 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
             if (nxPos < 0 || nxPos >= width) continue;
 
             const nIdx = nyPos * width + nxPos;
-            if (validMask[nIdx] === 0) continue;
+            if (validMask[nIdx] !== 1) continue;
 
             const nNx = rawNx[nIdx];
             const nNy = rawNy[nIdx];
@@ -1972,18 +1991,35 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
     smoothNz.set(rawNz);
   }
 
-  // 3. GRAVAÇÃO FINAL NO BUFFER COM INVERSÕES E FUNDO TRANSPARENTE
+  // 3. GRAVAÇÃO FINAL NO BUFFER COM FUNDO ROXO PADRÃO #7F7FFF E OUTLINE PROTEGIDO
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const pIdx = y * width + x;
       const idx = pIdx * 4;
 
-      // Fundo 100% transparente (Alpha = 0)
+      // Fundo sem objeto:
       if (validMask[pIdx] === 0) {
-        nData[idx]     = 128;
-        nData[idx + 1] = 128;
+        if (normalBgMode === 'transparent') {
+          nData[idx]     = 128;
+          nData[idx + 1] = 128;
+          nData[idx + 2] = 255;
+          nData[idx + 3] = 0; // Transparência total se explicitamente escolhido
+        } else {
+          // Fundo roxo neutro padrão #7F7FFF da indústria de jogos 2.5D (RGB: 127, 127, 255, Alpha: 255)
+          nData[idx]     = 127;
+          nData[idx + 1] = 127;
+          nData[idx + 2] = 255;
+          nData[idx + 3] = 255;
+        }
+        continue;
+      }
+
+      // Outline de pixel art: NÃO aplicar normal map (mantém normal flat neutra #7F7FFF)
+      if (validMask[pIdx] === 2 || (excludeOutline && strokeMap && strokeMap[pIdx] === 1)) {
+        nData[idx]     = 127;
+        nData[idx + 1] = 127;
         nData[idx + 2] = 255;
-        nData[idx + 3] = 0; // Transparência total
+        nData[idx + 3] = 255;
         continue;
       }
 
@@ -2064,8 +2100,19 @@ function renderDynamicLighting() {
     for (let x = 0; x < w; x++) {
       const idx = (y * w + x) * 4;
       const a = diff[idx + 3];
-      if (a === 0 || norm[idx + 3] === 0) {
+      if (a === 0) {
         out[idx + 3] = 0;
+        continue;
+      }
+
+      // Se for pixel do outline de pixel art, NÃO aplicar normal map nem luz dinâmica!
+      // Preserva a cor original e nitidez do traço de pixel art (sem reflexos ou deformações)
+      const pIdx = y * w + x;
+      if (currentOutlineMap && currentOutlineMap[pIdx] === 1) {
+        out[idx]     = diff[idx];
+        out[idx + 1] = diff[idx + 1];
+        out[idx + 2] = diff[idx + 2];
+        out[idx + 3] = a;
         continue;
       }
 

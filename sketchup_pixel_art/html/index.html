@@ -342,6 +342,21 @@
         </div>
 
         <div class="form-row">
+          <label for="normalBgMode" title="Cor de fundo do mapa normal">Fundo do Normal Map:</label>
+          <select id="normalBgMode">
+            <option value="purple" selected>🟣 Roxo Padrão (#7F7FFF)</option>
+            <option value="transparent">⚪ Transparente (Alpha 0)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label title="Protege a linha de contorno de pixel art mantendo-a com normal neutra #7F7FFF">Outline Pixel Art:</label>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px;">
+            <label><input type="checkbox" id="normalExcludeOutline" checked> Preservar Outline (#7F7FFF plano)</label>
+          </div>
+        </div>
+
+        <div class="form-row">
           <label title="Inversões de canais para compatibilidade entre motores">Inversão de Eixos:</label>
           <div style="display: flex; gap: 10px; font-size: 11px;">
             <label><input type="checkbox" id="invertR"> Invert X (R)</label>
@@ -352,7 +367,7 @@
 
         <div class="form-hint" style="margin-top: 6px;">
           ✓ Baseado no algoritmo matemático do <strong>NormalMap-Online</strong>.<br>
-          Fundo transparente | Padrão: <strong>Unity 2D / OpenGL (Y+)</strong>.
+          Fundo: <strong>#7F7FFF</strong> padrão 2.5D | Outline plano sem deformação | <strong>Unity 2D / OpenGL (Y+)</strong>.
         </div>
       </div>
 
