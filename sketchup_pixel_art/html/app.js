@@ -106,6 +106,13 @@ function setupUI() {
     });
   }
 
+  const edgesEl = document.getElementById('sketchupEdges');
+  if (edgesEl) {
+    edgesEl.addEventListener('change', () => {
+      requestViewportCapture();
+    });
+  }
+
   // Abas de Modo (Header)
   const tabDiffuse = document.getElementById('tabModeDiffuse');
   const tabNormal = document.getElementById('tabModeNormal');
@@ -312,6 +319,7 @@ function requestViewportCapture() {
   const directions = parseInt(document.getElementById('directionCount')?.value || 1);
   const shadingModel = document.getElementById('shadingModel')?.value || 'sketchup';
   const normalSourceMode = document.getElementById('normalSourceMode')?.value || 'geom';
+  const showEdges = document.getElementById('sketchupEdges')?.checked ?? true;
 
   // Otimização: Apenas solicita passe de albedo e normal se o usuário realmente precisar
   const needAlbedo = (shadingModel === 'cel_toon' || shadingModel === 'flat_albedo');
@@ -323,7 +331,7 @@ function requestViewportCapture() {
 
   const params = JSON.stringify({
     transparent: true,
-    hideEdges: true,
+    hideEdges: !showEdges,
     directions: directions,
     needAlbedo: needAlbedo,
     needNormals: needNormals
@@ -1358,7 +1366,7 @@ function sampleViewportCrisply(source, targetW, targetH, brickBoost, samplingMet
             const sg = sData[sIdx + 1];
             const sb = sData[sIdx + 2];
 
-            if (sa < 48 || (sr <= 8 && sg <= 8 && sb <= 8)) {
+            if (sa < 48) {
               continue;
             }
 

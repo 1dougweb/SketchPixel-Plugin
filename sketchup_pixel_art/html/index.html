@@ -60,6 +60,10 @@
             <option value="8">8 Direções (45° MMORPG Completo)</option>
           </select>
         </div>
+        <div class="form-row" style="margin-top: 6px;">
+          <label for="sketchupEdges" title="Mantém as arestas e perfis do SketchUp para linhas perfeitas de arquitetura e detalhes">Arestas 3D do Modelo:</label>
+          <input type="checkbox" id="sketchupEdges" checked>
+        </div>
         <div class="form-row">
           <label for="pixelScale">Tamanho:</label>
           <select id="pixelScale">
@@ -169,9 +173,9 @@
         <div class="slider-group">
           <div class="slider-label">
             <span title="Quantização de iluminação / Cel-Shading em faixas discretas (ColorRamp Constant do Blender)">Cel-Shading (Faixas de Luz)</span>
-            <span class="val" id="celStepsVal">4 tons</span>
+            <span class="val" id="celStepsVal">Desativado</span>
           </div>
-          <input type="range" id="celSteps" min="0" max="16" value="4">
+          <input type="range" id="celSteps" min="0" max="16" value="0">
         </div>
 
         <div class="form-row">
@@ -267,8 +271,8 @@
         <div class="form-row">
           <label for="outlineMode">Tipo de Contorno:</label>
           <select id="outlineMode">
-            <option value="both" selected>Contorno Completo (Silhueta + Arestas 3D)</option>
-            <option value="outer">Apenas Silhueta Externa (1px)</option>
+            <option value="outer" selected>Silhueta Externa 1px (Recomendado)</option>
+            <option value="both">Completo (Silhueta + Arestas 3D Extras)</option>
             <option value="inner">Apenas Silhueta Interna (1px)</option>
             <option value="none">Sem Contorno</option>
           </select>
@@ -286,10 +290,10 @@
         </div>
         <div class="slider-group" style="margin-top: 6px;">
           <div class="slider-label">
-            <span title="Detecta quinas 3D e frestas internas com continuidade e sem pontilhado">Linhas Internas 3D</span>
-            <span class="val" id="innerEdgesVal">40%</span>
+            <span title="Linhas internas extras calculadas por descontinuidade angular 3D">Linhas Internas Extras</span>
+            <span class="val" id="innerEdgesVal">0%</span>
           </div>
-          <input type="range" id="innerEdges" min="0" max="100" value="40">
+          <input type="range" id="innerEdges" min="0" max="100" value="0">
         </div>
       </div>
 
