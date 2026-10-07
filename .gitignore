@@ -14,3 +14,8 @@ $RECYCLE.BIN/
 viewport_*.png
 temp_*.png
 solar_*.png
+
+# Builds e pacotes
+dist/
+*.rbz
+

@@ -50,8 +50,21 @@ module SketchPixel
       )
 
       register_callbacks(@dialog)
+      restore_display_defaults
       @dialog.set_file(html_path)
       @dialog.show
+    end
+
+    def restore_display_defaults
+      model = Sketchup.active_model
+      return unless model
+      r_opts = model.rendering_options
+      SketchPixel.safe_set(r_opts, 'ShowAxes', true)
+      SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', 1)
+      SketchPixel.safe_set(r_opts, 'DrawProfiles', true)
+      SketchPixel.safe_set(r_opts, 'DisplaySky', true)
+      SketchPixel.safe_set(r_opts, 'DisplayGround', true)
+      model.active_view.invalidate
     end
 
     def do_capture(dlg, params_json = '{}')
@@ -69,6 +82,8 @@ module SketchPixel
       end
       directions = params['directions'].to_i
       directions = 1 unless [1, 4, 8].include?(directions)
+      hide_edges = (params['hideEdges'] == true)
+      need_normals = (params['needNormals'] == true)
 
       view = model.active_view
       vp_w = view.vpwidth
@@ -89,14 +104,16 @@ module SketchPixel
         directions.times do |i|
           angle = (360.0 / directions) * i
           if i > 0
-            # Orbita a câmera ao redor do eixo Z do centro do modelo (mesma altura e projeção)
+            # Orbita a câmera ao redor do eixo Z do centro do modelo
             tr = Geom::Transformation.rotation(center, Z_AXIS, angle.degrees)
             view.camera.set(orig_eye.transform(tr), orig_target.transform(tr), orig_up.transform(tr))
           end
           SketchPixel.log("Capturando direção #{i + 1}/#{directions} (#{angle.round}°)")
-          frames << capture_pass_set(model, view, w, h).merge(angle: angle)
+          pass_data = capture_pass_set(model, view, w, h, hide_edges: hide_edges, need_normals: need_normals)
+          frames << pass_data.merge(angle: angle)
         end
       ensure
+        # Restaura a câmera original
         view.camera.set(orig_eye, orig_target, orig_up)
         view.invalidate
       end
@@ -120,101 +137,80 @@ module SketchPixel
       dlg.execute_script("window.onCaptureError(#{e.message.to_json});")
     end
 
-    # Lê um PNG gravado pelo SketchUp aguardando liberação do arquivo e retorna Data URL
+    # Lê um PNG gravado pelo SketchUp de forma não bloqueante e ultrarrápida
     def read_png_data_url(path)
-      50.times do
+      if File.exist?(path) && File.size(path) > 100
+        begin
+          b64 = Base64.strict_encode64(File.binread(path))
+          File.delete(path) rescue nil
+          return "data:image/png;base64,#{b64}"
+        rescue StandardError
+        end
+      end
+
+      15.times do
+        sleep(0.01)
         if File.exist?(path) && File.size(path) > 100
           begin
             b64 = Base64.strict_encode64(File.binread(path))
             File.delete(path) rescue nil
             return "data:image/png;base64,#{b64}"
           rescue StandardError
-            # Arquivo ainda bloqueado pelo processo de escrita
           end
         end
-        sleep(0.02)
       end
       ''
     end
 
-    # Captura os 3 passes de uma direção:
-    #  - diffuse: render normal do SketchUp (luz e texturas)
-    #  - albedo:  cor do material sem luz direcional (base para o toon shading em JS)
-    #  - normal:  normais reais das faces em espaço de câmera
-    def capture_pass_set(model, view, w, h)
+    # Captura limpa e não destrutiva (NUNCA altera estilos de forma permanente nem polui histórico)
+    def capture_pass_set(model, view, w, h, opts = {})
       stamp = "#{Time.now.to_i}_#{rand(100_000)}"
       tmp_dir = Dir.tmpdir
       diffuse_path = File.join(tmp_dir, "sp_diff_#{stamp}.png")
-      albedo_path  = File.join(tmp_dir, "sp_alb_#{stamp}.png")
       normal_path  = File.join(tmp_dir, "sp_norm_#{stamp}.png")
 
       r_opts = model.rendering_options
-      s_info = model.shadow_info
-      orig = {
-        render_mode: (r_opts['RenderMode'] rescue nil),
-        edges:       (r_opts['EdgeDisplayMode'] rescue nil),
-        profiles:    (r_opts['DrawProfiles'] rescue nil),
-        sky:         (r_opts['DisplaySky'] rescue nil),
-        ground:      (r_opts['DisplayGround'] rescue nil),
-        axes:        (r_opts['ShowAxes'] rescue nil),
-        shadows:     (s_info['DisplayShadows'] rescue nil),
-        light:       (s_info['Light'] rescue nil),
-        dark:        (s_info['Dark'] rescue nil),
-        use_sun:     (s_info['UseSunForAllShading'] rescue nil)
-      }
+      orig_edges = (r_opts['EdgeDisplayMode'] rescue 1)
+      orig_profiles = (r_opts['DrawProfiles'] rescue true)
 
       diffuse_url = ''
-      albedo_url = ''
-      begin
-        SketchPixel.safe_set(r_opts, 'DisplaySky', false)
-        SketchPixel.safe_set(r_opts, 'DisplayGround', false)
-        SketchPixel.safe_set(r_opts, 'DrawHorizon', false)
-        SketchPixel.safe_set(r_opts, 'ShowAxes', false)
-        SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', 0)
-        SketchPixel.safe_set(r_opts, 'DrawProfiles', false)
-        SketchPixel.safe_set(r_opts, 'RenderMode', 3) # Shaded with textures
+      normal_url = ''
 
-        # 1. PASSE DIFUSO (iluminação do SketchUp)
+      begin
+        # Se solicitado pelo painel, oculta arestas apenas durante a captura
+        if opts[:hide_edges]
+          SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', 0)
+          SketchPixel.safe_set(r_opts, 'DrawProfiles', false)
+        end
+
         File.delete(diffuse_path) rescue nil
-        view.invalidate
-        view.refresh
-        view.write_image({ filename: diffuse_path, width: w, height: h, antialias: false, transparent: true })
+        view.write_image({
+          filename: diffuse_path,
+          width: w,
+          height: h,
+          antialias: false,
+          transparent: true
+        })
         diffuse_url = read_png_data_url(diffuse_path)
 
-        # 2. PASSE ALBEDO (sem luz direcional: só ambiente -> cor pura do material)
-        SketchPixel.safe_set(s_info, 'DisplayShadows', false)
-        SketchPixel.safe_set(s_info, 'UseSunForAllShading', true)
-        SketchPixel.safe_set(s_info, 'Light', 0)
-        SketchPixel.safe_set(s_info, 'Dark', 100)
-        File.delete(albedo_path) rescue nil
-        view.invalidate
-        view.refresh
-        view.write_image({ filename: albedo_path, width: w, height: h, antialias: false, transparent: true })
-        albedo_url = read_png_data_url(albedo_path)
-      ensure
-        SketchPixel.safe_set(r_opts, 'DisplaySky', orig[:sky])
-        SketchPixel.safe_set(r_opts, 'DisplayGround', orig[:ground])
-        SketchPixel.safe_set(r_opts, 'ShowAxes', orig[:axes])
-        SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', orig[:edges])
-        SketchPixel.safe_set(r_opts, 'DrawProfiles', orig[:profiles])
-        SketchPixel.safe_set(r_opts, 'RenderMode', orig[:render_mode])
-        unless orig[:shadows].nil?
-          SketchPixel.safe_set(s_info, 'DisplayShadows', orig[:shadows])
-          SketchPixel.safe_set(s_info, 'Light', orig[:light])
-          SketchPixel.safe_set(s_info, 'Dark', orig[:dark])
-          SketchPixel.safe_set(s_info, 'UseSunForAllShading', orig[:use_sun])
+        # Captura de normais 3D reais (executada apenas se explicitamente solicitada)
+        if opts[:need_normals]
+          render_3d_geometry_normals(model, view, normal_path, w, h)
+          normal_url = read_png_data_url(normal_path)
         end
+      ensure
+        # Restaura imediatamente as configurações de arestas do usuário
+        if opts[:hide_edges]
+          SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', orig_edges)
+          SketchPixel.safe_set(r_opts, 'DrawProfiles', orig_profiles)
+        end
+        view.invalidate
       end
 
-      # 3. PASSE DE NORMAIS FÍSICAS REAIS DAS FACES 3D
-      render_3d_geometry_normals(model, view, normal_path, w, h)
-      normal_url = read_png_data_url(normal_path)
-
-      SketchPixel.log("Passes: diffuse=#{diffuse_url.length} albedo=#{albedo_url.length} normal=#{normal_url.length}")
-      { diffuseUrl: diffuse_url, albedoUrl: albedo_url, normalUrl: normal_url }
+      { diffuseUrl: diffuse_url, albedoUrl: diffuse_url, normalUrl: normal_url }
     end
 
-    # Renderiza as normais reais das faces do objeto 3D
+    # Renderiza as normais reais das faces do objeto 3D sem corromper materiais ou histórico
     def render_3d_geometry_normals(model, view, out_path, width, height)
       cam = view.camera
       dir = cam.direction.normalize
@@ -230,36 +226,16 @@ module SketchPixel
       y_cam = x_cam.cross(dir).normalize
 
       r_opts = model.rendering_options
-      orig_render_mode = r_opts['RenderMode'] rescue nil
-      orig_edges       = r_opts['EdgeDisplayMode'] rescue nil
-      orig_profiles    = r_opts['DrawProfiles'] rescue nil
-      orig_sky         = r_opts['DisplaySky'] rescue nil
-      orig_ground      = r_opts['DisplayGround'] rescue nil
-      orig_axes        = r_opts['ShowAxes'] rescue nil
+      orig_render_mode = (r_opts['RenderMode'] rescue nil)
 
-      s_info = model.shadow_info
-      orig_shadows = s_info['DisplayShadows'] rescue nil
-      orig_light   = s_info['Light'] rescue nil
-      orig_dark    = s_info['Dark'] rescue nil
-      orig_use_sun = s_info['UseSunForAllShading'] rescue nil
-
-      orig_materials = {}
       material_cache = {}
+      visited_defs = {}
+
+      # Operação isolada com prev_trans = FALSE para NUNCA apagar edições anteriores do usuário
+      model.start_operation('SketchPixel Normal Pass', true, false, false)
 
       begin
-        SketchPixel.safe_set(r_opts, 'DisplaySky', false)
-        SketchPixel.safe_set(r_opts, 'DisplayGround', false)
-        SketchPixel.safe_set(r_opts, 'DrawHorizon', false)
-        SketchPixel.safe_set(r_opts, 'ShowAxes', false)
-        SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', 0)
-        SketchPixel.safe_set(r_opts, 'DrawProfiles', false)
-        SketchPixel.safe_set(r_opts, 'RenderMode', 2) # Shaded (sem texturas)
-
-        # Iluminação ambiente 100% plana para que a cor da normal em cada face seja capturada pura
-        SketchPixel.safe_set(s_info, 'DisplayShadows', false)
-        SketchPixel.safe_set(s_info, 'UseSunForAllShading', true)
-        SketchPixel.safe_set(s_info, 'Light', 100)
-        SketchPixel.safe_set(s_info, 'Dark', 100)
+        SketchPixel.safe_set(r_opts, 'RenderMode', 2) # Shaded sem texturas
 
         paint_faces = lambda do |entities, tr|
           entities.each do |entity|
@@ -267,10 +243,7 @@ module SketchPixel
             next if entity.respond_to?(:visible?) && !entity.visible?
 
             if entity.is_a?(Sketchup::Face)
-              orig_materials[entity] = [entity.material, entity.back_material]
-
               n = entity.normal.transform(tr).normalize
-              # Inverte se a face estiver com o verso voltado para a câmera (ex: interior de vaso)
               n = n.reverse if n.dot(z_out) < 0.0
 
               nx = n.dot(x_cam)
@@ -284,14 +257,18 @@ module SketchPixel
               nz /= len
 
               # Padrão OpenGL / Unity Normal Map (Y+):
-              # -X = Azul escuro, +X = Magenta/Rosa, +Y = Verde/Ciano, -Y = Roxo escuro, +Z = Lavanda
               r = [[((nx * 0.5 + 0.5) * 255.0).round, 0].max, 255].min
               g = [[((ny * 0.5 + 0.5) * 255.0).round, 0].max, 255].min
               b = [[((nz * 0.5 + 0.5) * 255.0).round, 0].max, 255].min
 
-              key = "sp_norm_#{r}_#{g}_#{b}"
+              # Quantiza em passos de 8 para limitar a quantidade de materiais criados
+              r = (r / 8) * 8
+              g = (g / 8) * 8
+              b = (b / 8) * 8
+
+              key = "sp_n_#{r}_#{g}_#{b}"
               mat = material_cache[key] ||= begin
-                m = model.materials[key] || model.materials.add(key)
+                m = model.materials.add(key)
                 m.color = Sketchup::Color.new(r, g, b)
                 m
               end
@@ -299,21 +276,16 @@ module SketchPixel
               entity.material = mat
               entity.back_material = mat
             elsif entity.is_a?(Sketchup::Group)
-              orig_materials[entity] = [entity.material, nil]
-              entity.material = nil rescue nil
               paint_faces.call(entity.entities, tr * entity.transformation)
             elsif entity.is_a?(Sketchup::ComponentInstance)
-              orig_materials[entity] = [entity.material, nil]
-              entity.material = nil rescue nil
+              next if visited_defs[entity.definition]
+              visited_defs[entity.definition] = true
               paint_faces.call(entity.definition.entities, tr * entity.transformation)
             end
           end
         end
 
         paint_faces.call(model.entities, Geom::Transformation.new)
-
-        view.invalidate
-        view.refresh
 
         File.delete(out_path) rescue nil
         view.write_image({
@@ -323,39 +295,11 @@ module SketchPixel
           antialias: false,
           transparent: true
         })
-
-        40.times do
-          break if File.exist?(out_path) && File.size(out_path) > 100
-          sleep(0.02)
-        end
       ensure
-        # Restaura os materiais originais do usuário
-        orig_materials.each do |ent, mats|
-          next unless ent.valid?
-          ent.material = mats[0]
-          ent.back_material = mats[1] if ent.is_a?(Sketchup::Face)
-        end
-
-        # Remove materiais temporários de normal
-        material_cache.each_value do |m|
-          model.materials.remove(m) rescue nil
-        end
-
-        # Restaura estilo do SketchUp
-        SketchPixel.safe_set(r_opts, 'DisplaySky', orig_sky)
-        SketchPixel.safe_set(r_opts, 'DisplayGround', orig_ground)
-        SketchPixel.safe_set(r_opts, 'ShowAxes', orig_axes)
-        SketchPixel.safe_set(r_opts, 'RenderMode', orig_render_mode)
-        SketchPixel.safe_set(r_opts, 'EdgeDisplayMode', orig_edges)
-        SketchPixel.safe_set(r_opts, 'DrawProfiles', orig_profiles)
-        if orig_shadows != nil
-          SketchPixel.safe_set(s_info, 'DisplayShadows', orig_shadows)
-          SketchPixel.safe_set(s_info, 'Light', orig_light)
-          SketchPixel.safe_set(s_info, 'Dark', orig_dark)
-          SketchPixel.safe_set(s_info, 'UseSunForAllShading', orig_use_sun)
-        end
+        # Reverte instantaneamente todas as cores e materiais temporários sem tocar no histórico do usuário
+        model.abort_operation
+        SketchPixel.safe_set(r_opts, 'RenderMode', orig_render_mode) if orig_render_mode
         view.invalidate
-        view.refresh
       end
     end
 
@@ -400,6 +344,10 @@ module SketchPixel
       dlg.add_action_callback('getCameraAngles') do |_context|
         angles = CameraHelper.get_current_camera_angles
         dlg.execute_script("if (window.onCameraAnglesReceived) window.onCameraAnglesReceived(#{angles.to_json});") rescue nil
+      end
+
+      dlg.add_action_callback('restoreDisplayDefaults') do |_context|
+        SketchPixel.restore_display_defaults
       end
 
       dlg.add_action_callback('saveImage') do |_context, payload_json|

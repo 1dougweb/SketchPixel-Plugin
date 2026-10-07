@@ -59,6 +59,19 @@ function waitForSketchUp(attempts) {
   }
 }
 
+let pendingProcessingId = null;
+function scheduleProcessing() {
+  if (pendingProcessingId) return;
+  pendingProcessingId = requestAnimationFrame(() => {
+    pendingProcessingId = null;
+    if (currentViewMode === 'light') {
+      renderDynamicLighting();
+    } else {
+      applyProcessing();
+    }
+  });
+}
+
 // Setup de Controles
 function setupUI() {
   const inputs = [
@@ -77,19 +90,11 @@ function setupUI() {
     if (!el) return;
     el.addEventListener('input', () => {
       updateSliderLabels();
-      if (currentViewMode === 'light') {
-        renderDynamicLighting();
-      } else {
-        applyProcessing();
-      }
+      scheduleProcessing();
     });
     el.addEventListener('change', () => {
       updateSliderLabels();
-      if (currentViewMode === 'light') {
-        renderDynamicLighting();
-      } else {
-        applyProcessing();
-      }
+      scheduleProcessing();
     });
   });
 
@@ -97,7 +102,7 @@ function setupUI() {
   if (aspectModeEl) {
     aspectModeEl.addEventListener('change', () => {
       updatePixelScaleOptions();
-      applyProcessing();
+      scheduleProcessing();
     });
   }
 
@@ -305,14 +310,23 @@ function callSketchUp(action, payload) {
 
 function requestViewportCapture() {
   const directions = parseInt(document.getElementById('directionCount')?.value || 1);
+  const shadingModel = document.getElementById('shadingModel')?.value || 'sketchup';
+  const normalSourceMode = document.getElementById('normalSourceMode')?.value || 'geom';
+
+  // Otimização: Apenas solicita passe de albedo e normal se o usuário realmente precisar
+  const needAlbedo = (shadingModel === 'cel_toon' || shadingModel === 'flat_albedo');
+  const needNormals = (currentViewMode === 'normal' || currentViewMode === 'light' || normalSourceMode === 'geom' || normalSourceMode === 'combined');
+
   statusText.textContent = directions > 1 
     ? `Renderizando ${directions} direções 3D em 360° do SketchUp...`
-    : 'Renderizando geometria física e sombras do SketchUp...';
+    : 'Renderizando geometria e sombras do SketchUp...';
 
   const params = JSON.stringify({
     transparent: true,
     hideEdges: true,
-    directions: directions
+    directions: directions,
+    needAlbedo: needAlbedo,
+    needNormals: needNormals
   });
 
   if (window.sketchup) {
@@ -771,14 +785,13 @@ function cleanOrphanPixels(data, width, height, passes) {
 
         // 2. Pixel órfão: menos de 2 vizinhos com cor parecida -> absorvido pelo cluster dominante
         if (sameCount < 2 && neighborColors.length > 0) {
-          const freqMap = new Map();
-          for (const c of neighborColors) {
-            freqMap.set(c[3], (freqMap.get(c[3]) || 0) + 1);
-          }
-
+          const freq = {};
           let bestKey = neighborColors[0][3];
           let maxF = 0;
-          for (const [k, f] of freqMap.entries()) {
+          for (let i = 0; i < neighborColors.length; i++) {
+            const k = neighborColors[i][3];
+            const f = (freq[k] || 0) + 1;
+            freq[k] = f;
             if (f > maxF) {
               maxF = f;
               bestKey = k;
@@ -1314,8 +1327,11 @@ function sampleViewportCrisply(source, targetW, targetH, brickBoost, samplingMet
 
         let opaqueCount = 0;
         let totalCount = 0;
-        const bucketCounts = new Map();
-        const bucketColors = new Map();
+        const bucketCounts = {};
+        const bucketR = {};
+        const bucketG = {};
+        const bucketB = {};
+        const seenKeys = [];
 
         const stepX = Math.max(1, Math.floor((sx1 - sx0) / 4));
         const stepY = Math.max(1, Math.floor((sy1 - sy0) / 4));
@@ -1337,13 +1353,17 @@ function sampleViewportCrisply(source, targetW, targetH, brickBoost, samplingMet
             opaqueCount++;
             // Quantização de 5-bits por canal para votação de clusters sólidos
             const bucketKey = ((sr >> 3) << 10) | ((sg >> 3) << 5) | (sb >> 3);
-            bucketCounts.set(bucketKey, (bucketCounts.get(bucketKey) || 0) + 1);
-
-            if (!bucketColors.has(bucketKey)) {
-              bucketColors.set(bucketKey, [sr, sg, sb, 1]);
+            if (bucketCounts[bucketKey] === undefined) {
+              bucketCounts[bucketKey] = 1;
+              bucketR[bucketKey] = sr;
+              bucketG[bucketKey] = sg;
+              bucketB[bucketKey] = sb;
+              seenKeys.push(bucketKey);
             } else {
-              const c = bucketColors.get(bucketKey);
-              c[0] += sr; c[1] += sg; c[2] += sb; c[3]++;
+              bucketCounts[bucketKey]++;
+              bucketR[bucketKey] += sr;
+              bucketG[bucketKey] += sg;
+              bucketB[bucketKey] += sb;
             }
           }
         }
@@ -1355,7 +1375,9 @@ function sampleViewportCrisply(source, targetW, targetH, brickBoost, samplingMet
 
         let maxCount = -1;
         let dominantKey = -1;
-        for (const [key, count] of bucketCounts.entries()) {
+        for (let k = 0; k < seenKeys.length; k++) {
+          const key = seenKeys[k];
+          const count = bucketCounts[key];
           if (count > maxCount) {
             maxCount = count;
             dominantKey = key;
@@ -1363,10 +1385,10 @@ function sampleViewportCrisply(source, targetW, targetH, brickBoost, samplingMet
         }
 
         if (dominantKey !== -1) {
-          const c = bucketColors.get(dominantKey);
-          outData[targetIdx]     = Math.round(c[0] / c[3]);
-          outData[targetIdx + 1] = Math.round(c[1] / c[3]);
-          outData[targetIdx + 2] = Math.round(c[2] / c[3]);
+          const cnt = bucketCounts[dominantKey];
+          outData[targetIdx]     = Math.round(bucketR[dominantKey] / cnt);
+          outData[targetIdx + 1] = Math.round(bucketG[dominantKey] / cnt);
+          outData[targetIdx + 2] = Math.round(bucketB[dominantKey] / cnt);
           outData[targetIdx + 3] = 255;
         } else {
           outData[targetIdx + 3] = 0;
@@ -1776,10 +1798,12 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
   const hasGeomNormals = !!(geomNormalData && geomNormalData.length >= width * height * 4);
 
   const getLum = (buf, x, y) => {
-    if (!buf) return 0;
+    if (!buf) return 0.5;
     x = clamp(x, 0, width - 1);
     y = clamp(y, 0, height - 1);
     const i = (y * width + x) * 4;
+    // Se o pixel vizinho for fundo transparente, retorna neutro 0.5 para evitar abismos falsos
+    if (buf[i + 3] < 32) return 0.5;
     return (buf[i] * 0.299 + buf[i + 1] * 0.587 + buf[i + 2] * 0.114) / 255.0;
   };
 
@@ -1789,9 +1813,9 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
   // dz = (1.0 / strength) * (1.0 + pow(2.0, level))
   const dz = (1.0 / Math.max(0.01, strength)) * (1.0 + Math.pow(2.0, level));
 
-  // Step espacial proporcional ao level para cobrir a inclinação de faces volumétricas
-  const stepX = Math.max(1, Math.round(level * 0.4));
-  const stepY = Math.max(1, Math.round(level * 0.4));
+  // Step espacial: para sprites em pixel art, step de 1 a 2 pixels mantém a definição perfeita
+  const stepX = Math.max(1, Math.min(2, Math.round(level * 0.2)));
+  const stepY = Math.max(1, Math.min(2, Math.round(level * 0.2)));
 
   // 1. Extração dos vetores primários conforme o modo selecionado
   for (let y = 0; y < height; y++) {
@@ -1826,18 +1850,11 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
       let ny = 0.0;
       let nz = 1.0;
 
-      if (mode === 'geom') {
-        if (hasGeomNormals && geomNormalData[idx + 3] > 16) {
-          // MODO GEOMETRIA PURA: Vetores tridimensionais exatos das faces do SketchUp (Imagem 1)
-          nx = (geomNormalData[idx] / 255.0) * 2.0 - 1.0;
-          ny = (geomNormalData[idx + 1] / 255.0) * 2.0 - 1.0;
-          nz = (geomNormalData[idx + 2] / 255.0) * 2.0 - 1.0;
-        } else {
-          // Fallback caso o passe de normais ainda esteja carregando
-          nx = 0.0;
-          ny = 0.0;
-          nz = 1.0;
-        }
+      if (mode === 'geom' && hasGeomNormals && geomNormalData[idx + 3] > 16) {
+        // MODO GEOMETRIA PURA: Vetores tridimensionais exatos das faces do SketchUp
+        nx = (geomNormalData[idx] / 255.0) * 2.0 - 1.0;
+        ny = (geomNormalData[idx + 1] / 255.0) * 2.0 - 1.0;
+        nz = (geomNormalData[idx + 2] / 255.0) * 2.0 - 1.0;
       } else if (mode === 'photometric' && eastData && westData) {
         // MODO 4-WAY PHOTOS (NormalMapFromPicturesShader do NormalMap-Online):
         const lEast  = getLum(eastData, x, y);
@@ -1894,9 +1911,9 @@ function generatePhysicalNormalMap(diffuseData, shadingData, eastData, westData,
           dx = (tl + 2.0 * l + bl) - (tr + 2.0 * r + br);
           dy = (tl + 2.0 * t + tr) - (bl + 2.0 * b + br);
         } else {
-          // Scharr
-          dx = (tl * 3.0 + l * 10.0 + bl * 3.0) - (tr * 3.0 + r * 10.0 + br * 3.0);
-          dy = (tl * 3.0 + t * 10.0 + tr * 3.0) - (bl * 3.0 + b * 10.0 + br * 3.0);
+          // Scharr: normalizado pela proporção de pesos (16 vs 4)
+          dx = ((tl * 3.0 + l * 10.0 + bl * 3.0) - (tr * 3.0 + r * 10.0 + br * 3.0)) / 4.0;
+          dy = ((tl * 3.0 + t * 10.0 + tr * 3.0) - (bl * 3.0 + b * 10.0 + br * 3.0)) / 4.0;
         }
 
         nx = dx * 255.0;

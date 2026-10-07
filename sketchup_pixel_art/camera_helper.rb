@@ -95,7 +95,6 @@ module SketchPixel
              Geom::Vector3d.new(0, 0, 1)
            end
 
-      model.start_operation('Câmera Pixel Art', true)
       camera.set(eye, center, up)
       
       if fit
@@ -103,7 +102,6 @@ module SketchPixel
         view.zoom_extents if model.selection.empty?
       end
       
-      model.commit_operation
       view.invalidate
     end
 
