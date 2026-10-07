@@ -263,7 +263,7 @@ function updateSliderLabels() {
       lbl.textContent = `${el.value} cores`;
     } else if (el.id === 'celSteps') {
       const v = parseInt(el.value);
-      lbl.textContent = v === 0 ? 'Desativado' : `${v} faixas`;
+      lbl.textContent = v === 0 ? 'Desativado' : `${v} tons`;
     } else if (el.id === 'lightIntensity') {
       const v = (parseFloat(el.value) / 10.0).toFixed(1);
       lbl.textContent = `${v}×`;
@@ -607,9 +607,9 @@ function applyBayerDither(data, width, height, ditherType, amount) {
   }
 }
 
-// Cel-Shading: quantização de tons em faixas discretas (ColorRamp Constant do Blender)
+// Cel-Shading: quantização de tons em faixas discretas (Highlight, Midtone, Shadow, Deep Shadow)
 function applyCelShading(data, width, height, steps) {
-  if (steps <= 0 || steps >= 16) return;
+  if (steps <= 0 || steps > 16) return;
 
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] === 0) continue;
@@ -619,7 +619,19 @@ function applyCelShading(data, width, height, steps) {
     const b = data[i + 2];
 
     const lum = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0;
-    const steppedLum = Math.round(lum * (steps - 1)) / (steps - 1);
+    
+    // Mapeamento em faixas discretas sólidas (proporções consagradas de pixel art artesanal)
+    let steppedLum = lum;
+    if (steps === 3) {
+      steppedLum = lum > 0.62 ? 0.90 : (lum > 0.28 ? 0.54 : 0.24);
+    } else if (steps === 4) {
+      steppedLum = lum > 0.70 ? 0.94 : (lum > 0.44 ? 0.64 : (lum > 0.22 ? 0.36 : 0.16));
+    } else if (steps === 5) {
+      steppedLum = lum > 0.78 ? 0.95 : (lum > 0.55 ? 0.74 : (lum > 0.35 ? 0.50 : (lum > 0.18 ? 0.28 : 0.12)));
+    } else {
+      steppedLum = Math.round(lum * (steps - 1)) / (steps - 1);
+    }
+
     const ratio = (lum > 0.001) ? (steppedLum / lum) : 0;
 
     data[i]     = clamp(Math.round(r * ratio), 0, 255);
@@ -1101,12 +1113,12 @@ function applyProcessing() {
 
   // 11. Bordas e Silhueta Pixel-Perfect de Alta Definição
   let strokeMap = null;
-  const outlineMode = document.getElementById('outlineMode')?.value || 'outer';
+  const outlineMode = document.getElementById('outlineMode')?.value || 'both';
   if (outlineMode !== 'none') {
     const outlineColor = document.getElementById('outlineColor')?.value || 'selout';
     const cleanPP = document.getElementById('cleanPixelPerfect')?.checked ?? true;
     const innerSens = parseInt(document.getElementById('innerEdges')?.value) || 0;
-    strokeMap = applyMasterPixelArtOutlines(data, targetW, targetH, outlineMode, outlineColor, cleanPP, innerSens);
+    strokeMap = applyMasterPixelArtOutlines(data, targetW, targetH, outlineMode, outlineColor, cleanPP, innerSens, geomNormalData);
   }
 
   currentOutlineMap = strokeMap;
@@ -1592,9 +1604,9 @@ function applyHDRProcessing(data, width, height, exposureEV, toneMapType, shadow
 }
 
 // =============================================================================
-// ALGORITMO DE BORDAS PIXEL-PERFECT (OUTER STROKE / SEL-OUT)
+// ALGORITMO DE BORDAS PIXEL-PERFECT (OUTER, INNER & ARESTAS 3D CONTÍNUAS)
 // =============================================================================
-function applyMasterPixelArtOutlines(data, width, height, mode, colorMode, cleanPP, innerSens) {
+function applyMasterPixelArtOutlines(data, width, height, mode, colorMode, cleanPP, innerSens, normalData = null) {
   const copy = new Uint8ClampedArray(data);
   const strokeMap = new Uint8Array(width * height);
   const strokeColorR = new Uint8Array(width * height);
@@ -1612,108 +1624,230 @@ function applyMasterPixelArtOutlines(data, width, height, mode, colorMode, clean
     return [copy[idx], copy[idx + 1], copy[idx + 2]];
   };
 
-  // 1. Mapear Contorno Externo (Outer Stroke - Mantém 100% das texturas intactas!)
-  if (mode === 'outer') {
+  // 1. SILHUETA EXTERNA / PERÍMETRO DO OBJETO (1px Contínuo e Sólido)
+  if (mode === 'both' || mode === 'outer' || mode === 'inner') {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const pIdx = y * width + x;
-        if (copy[pIdx * 4 + 3] !== 0) continue; // Pula os pixels sólidos da malha
+        const a = copy[pIdx * 4 + 3];
 
-        const aL = getAlpha(x - 1, y);
-        const aR = getAlpha(x + 1, y);
-        const aT = getAlpha(x, y - 1);
-        const aB = getAlpha(x, y + 1);
+        if (mode === 'outer') {
+          // Traço imediatamente fora da malha
+          if (a !== 0) continue;
+          const aL = getAlpha(x - 1, y);
+          const aR = getAlpha(x + 1, y);
+          const aT = getAlpha(x, y - 1);
+          const aB = getAlpha(x, y + 1);
 
-        if (aL > 0 || aR > 0 || aT > 0 || aB > 0) {
-          strokeMap[pIdx] = 1;
-
-          // Seleciona cor do vizinho sólido mais próximo para Sel-Out (Sombreado Natural)
-          let nr = 18, ng = 18, nb = 22;
-          if (colorMode === 'selout') {
-            const solidNeighbor = aL > 0 ? getPixelRGB(x - 1, y) :
-                                  aR > 0 ? getPixelRGB(x + 1, y) :
-                                  aT > 0 ? getPixelRGB(x, y - 1) : getPixelRGB(x, y + 1);
-            nr = Math.floor(solidNeighbor[0] * 0.38);
-            ng = Math.floor(solidNeighbor[1] * 0.38);
-            nb = Math.floor(solidNeighbor[2] * 0.38);
+          if (aL > 32 || aR > 32 || aT > 32 || aB > 32) {
+            strokeMap[pIdx] = 1;
+            const neighbor = aL > 32 ? getPixelRGB(x - 1, y) :
+                             aR > 32 ? getPixelRGB(x + 1, y) :
+                             aT > 32 ? getPixelRGB(x, y - 1) : getPixelRGB(x, y + 1);
+            let nr = 16, ng = 16, nb = 22;
+            if (colorMode === 'selout') {
+              nr = Math.floor(neighbor[0] * 0.25);
+              ng = Math.floor(neighbor[1] * 0.25);
+              nb = Math.floor(neighbor[2] * 0.28);
+            }
+            strokeColorR[pIdx] = nr;
+            strokeColorG[pIdx] = ng;
+            strokeColorB[pIdx] = nb;
           }
-          strokeColorR[pIdx] = nr;
-          strokeColorG[pIdx] = ng;
-          strokeColorB[pIdx] = nb;
-        }
-      }
-    }
-  } else if (mode === 'inner') {
-    // Contorno Interno
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const pIdx = y * width + x;
-        if (copy[pIdx * 4 + 3] === 0) continue;
+        } else {
+          // 'both' ou 'inner': Traço na borda interna da silhueta (estilo clássico de sprite)
+          if (a < 32) continue;
+          const aL = getAlpha(x - 1, y);
+          const aR = getAlpha(x + 1, y);
+          const aT = getAlpha(x, y - 1);
+          const aB = getAlpha(x, y + 1);
 
-        if (getAlpha(x - 1, y) === 0 || getAlpha(x + 1, y) === 0 ||
-            getAlpha(x, y - 1) === 0 || getAlpha(x, y + 1) === 0) {
-          strokeMap[pIdx] = 1;
-          const idx = pIdx * 4;
-          let nr = 18, ng = 18, nb = 22;
-          if (colorMode === 'selout') {
-            nr = Math.floor(copy[idx] * 0.4);
-            ng = Math.floor(copy[idx + 1] * 0.4);
-            nb = Math.floor(copy[idx + 2] * 0.4);
+          if (aL < 32 || aR < 32 || aT < 32 || aB < 32) {
+            strokeMap[pIdx] = 1;
+            const idx = pIdx * 4;
+            let nr = 16, ng = 16, nb = 22;
+            if (colorMode === 'selout') {
+              nr = Math.floor(copy[idx] * 0.25);
+              ng = Math.floor(copy[idx + 1] * 0.25);
+              nb = Math.floor(copy[idx + 2] * 0.28);
+            }
+            strokeColorR[pIdx] = nr;
+            strokeColorG[pIdx] = ng;
+            strokeColorB[pIdx] = nb;
           }
-          strokeColorR[pIdx] = nr;
-          strokeColorG[pIdx] = ng;
-          strokeColorB[pIdx] = nb;
         }
       }
     }
   }
 
-  // 2. Linhas internas 3D (Opcional, com threshold seguro)
-  if (innerSens > 0) {
-    const threshold = 120 - (innerSens * 0.6);
+  // 2. ARESTAS INTERNAS 3D (Descontinuidade Angular de Normais & Histerese Contínua)
+  if ((mode === 'both' || mode === 'inner' || mode === 'outer') && innerSens > 0) {
+    const edgeScores = new Float32Array(width * height);
+    const hasNormals = !!(normalData && normalData.length >= width * height * 4);
+
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
         const pIdx = y * width + x;
-        if (copy[pIdx * 4 + 3] === 0 || strokeMap[pIdx] === 1) continue;
+        if (copy[pIdx * 4 + 3] < 32 || strokeMap[pIdx] === 1) continue;
 
-        const getLum = (px, py) => {
-          const i = (py * width + px) * 4;
-          return copy[i] * 0.299 + copy[i + 1] * 0.587 + copy[i + 2] * 0.114;
-        };
+        let score = 0;
 
-        const diffX = Math.abs(getLum(x + 1, y) - getLum(x - 1, y));
-        const diffY = Math.abs(getLum(x, y + 1) - getLum(x, y - 1));
-
-        if (diffX + diffY > threshold) {
-          strokeMap[pIdx] = 1;
+        if (hasNormals) {
+          // Usa os vetores normais 3D exatos do SketchUp para detectar quinas de geometria
           const idx = pIdx * 4;
-          strokeColorR[pIdx] = Math.floor(copy[idx] * 0.4);
-          strokeColorG[pIdx] = Math.floor(copy[idx + 1] * 0.4);
-          strokeColorB[pIdx] = Math.floor(copy[idx + 2] * 0.4);
+          const idxR = (y * width + (x + 1)) * 4;
+          const idxD = ((y + 1) * width + x) * 4;
+
+          const nx = (normalData[idx] / 255.0) * 2.0 - 1.0;
+          const ny = (normalData[idx + 1] / 255.0) * 2.0 - 1.0;
+          const nz = (normalData[idx + 2] / 255.0) * 2.0 - 1.0;
+
+          const nxR = (normalData[idxR] / 255.0) * 2.0 - 1.0;
+          const nyR = (normalData[idxR + 1] / 255.0) * 2.0 - 1.0;
+          const nzR = (normalData[idxR + 2] / 255.0) * 2.0 - 1.0;
+
+          const nxD = (normalData[idxD] / 255.0) * 2.0 - 1.0;
+          const nyD = (normalData[idxD + 1] / 255.0) * 2.0 - 1.0;
+          const nzD = (normalData[idxD + 2] / 255.0) * 2.0 - 1.0;
+
+          const dotX = nx * nxR + ny * nyR + nz * nzR;
+          const dotD = nx * nxD + ny * nyD + nz * nzD;
+
+          score = Math.max(0, 1.0 - dotX) + Math.max(0, 1.0 - dotD);
+        } else {
+          // Gradiente Sobel espacial com amostragem filtrada
+          const getL = (px, py) => {
+            const i = (py * width + px) * 4;
+            if (copy[i + 3] < 32) return 0.5;
+            return (copy[i] * 0.299 + copy[i + 1] * 0.587 + copy[i + 2] * 0.114) / 255.0;
+          };
+
+          const tl = getL(x - 1, y - 1), t = getL(x, y - 1), tr = getL(x + 1, y - 1);
+          const l  = getL(x - 1, y),                         r  = getL(x + 1, y);
+          const bl = getL(x - 1, y + 1), b = getL(x, y + 1), br = getL(x + 1, y + 1);
+
+          const gx = (tl + 2 * l + bl) - (tr + 2 * r + br);
+          const gy = (tl + 2 * t + tr) - (bl + 2 * b + br);
+          score = Math.sqrt(gx * gx + gy * gy);
         }
+
+        edgeScores[pIdx] = score;
+      }
+    }
+
+    // Limiar com histerese (high/low) para garantir traços contínuos e sem aspecto de zíper
+    const highThresh = hasNormals 
+      ? (0.85 - (innerSens / 100.0) * 0.60) // 0.25 a 0.85 para dot products
+      : (0.60 - (innerSens / 100.0) * 0.40); // 0.20 a 0.60 para Sobel
+    const lowThresh = highThresh * 0.65;
+
+    // Passo A: Identifica quinas fortes
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const pIdx = y * width + x;
+        if (strokeMap[pIdx] === 1) continue;
+        if (edgeScores[pIdx] >= highThresh) {
+          strokeMap[pIdx] = 1;
+        }
+      }
+    }
+
+    // Passo B: Propagação de histerese para unir os pontos e formar traços 100% contínuos
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const pIdx = y * width + x;
+          if (strokeMap[pIdx] === 1 || copy[pIdx * 4 + 3] < 32) continue;
+
+          if (edgeScores[pIdx] >= lowThresh) {
+            const hasNeighborEdge =
+              strokeMap[pIdx - 1] === 1 || strokeMap[pIdx + 1] === 1 ||
+              strokeMap[pIdx - width] === 1 || strokeMap[pIdx + width] === 1 ||
+              strokeMap[pIdx - width - 1] === 1 || strokeMap[pIdx - width + 1] === 1 ||
+              strokeMap[pIdx + width - 1] === 1 || strokeMap[pIdx + width + 1] === 1;
+
+            if (hasNeighborEdge) {
+              strokeMap[pIdx] = 1;
+            }
+          }
+        }
+      }
+    }
+
+    // Atribui cor aos novos pixels de arestas internas
+    for (let i = 0; i < width * height; i++) {
+      if (strokeMap[i] === 1 && strokeColorR[i] === 0 && strokeColorG[i] === 0 && strokeColorB[i] === 0) {
+        const idx = i * 4;
+        let nr = 16, ng = 16, nb = 22;
+        if (colorMode === 'selout') {
+          nr = Math.floor(copy[idx] * 0.25);
+          ng = Math.floor(copy[idx + 1] * 0.25);
+          nb = Math.floor(copy[idx + 2] * 0.28);
+        }
+        strokeColorR[i] = nr;
+        strokeColorG[i] = ng;
+        strokeColorB[i] = nb;
       }
     }
   }
 
-  // 3. Limpeza Pixel-Perfect: Remove cantos em 2x2 para manter escadinhas 1px estritas
+  // 3. LIMPEZA PIXEL-PERFECT REAL (Remove cantos em L mantendo linhas 100% contínuas)
   if (cleanPP) {
+    const toRemove = [];
+
     for (let y = 0; y < height - 1; y++) {
       for (let x = 0; x < width - 1; x++) {
-        const idx = y * width + x;
-        if (strokeMap[idx] === 0) continue;
+        const p00 = y * width + x;
+        const p10 = p00 + 1;
+        const p01 = p00 + width;
+        const p11 = p01 + 1;
 
-        const right = strokeMap[idx + 1];
-        const down  = strokeMap[idx + width];
-        const diag  = strokeMap[idx + width + 1];
+        const s00 = strokeMap[p00];
+        const s10 = strokeMap[p10];
+        const s01 = strokeMap[p01];
+        const s11 = strokeMap[p11];
 
-        if (right && down && diag) {
-          strokeMap[idx + width + 1] = 0;
+        // Se 3 pixels estão marcados em bloco 2x2 (L-Corner):
+        if (s00 + s10 + s01 + s11 === 3) {
+          let corner = -1, arm1 = -1, arm2 = -1;
+
+          if (!s11 && s00 && s10 && s01) { corner = p00; arm1 = p10; arm2 = p01; }
+          else if (!s01 && s00 && s10 && s11) { corner = p10; arm1 = p00; arm2 = p11; }
+          else if (!s10 && s00 && s01 && s11) { corner = p01; arm1 = p00; arm2 = p11; }
+          else if (!s00 && s10 && s01 && s11) { corner = p11; arm1 = p10; arm2 = p01; }
+
+          if (corner !== -1) {
+            const countNeighborsExcl = (p, excl) => {
+              const px = p % width;
+              const py = Math.floor(p / width);
+              let cnt = 0;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (dx === 0 && dy === 0) continue;
+                  const nx = px + dx, ny = py + dy;
+                  if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                  const np = ny * width + nx;
+                  if (np !== excl && strokeMap[np] === 1) cnt++;
+                }
+              }
+              return cnt;
+            };
+
+            // Remove o canto apenas se ambos os braços mantiverem conexões (evita quebrar linhas)
+            if (countNeighborsExcl(arm1, corner) >= 1 && countNeighborsExcl(arm2, corner) >= 1) {
+              toRemove.push(corner);
+            }
+          }
         }
       }
     }
+
+    for (let i = 0; i < toRemove.length; i++) {
+      strokeMap[toRemove[i]] = 0;
+    }
   }
 
-  // 4. Grava no buffer de imagem
+  // 4. Grava traços no buffer de imagem
   for (let i = 0; i < width * height; i++) {
     if (strokeMap[i] === 1) {
       const idx = i * 4;
